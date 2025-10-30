@@ -104,9 +104,14 @@
     </div>
 
     <script>
-      // 1) Configure Supabase
-      const SUPABASE_URL = "https://YOUR-PROJECT.supabase.co"; // <- replace
-      const SUPABASE_ANON_KEY = "YOUR_ANON_PUBLIC_KEY";        // <- replace
+      // 1) Configure Supabase (supports URL/localStorage overrides)
+      const qs = new URLSearchParams(location.search);
+      const paramUrl = qs.get("sbUrl");
+      const paramKey = qs.get("sbKey");
+      let SUPABASE_URL = paramUrl || localStorage.getItem("sb_url") || "https://YOUR-PROJECT.supabase.co"; // <- replace
+      let SUPABASE_ANON_KEY = paramKey || localStorage.getItem("sb_key") || "YOUR_ANON_PUBLIC_KEY";        // <- replace
+      if (paramUrl) localStorage.setItem("sb_url", paramUrl);
+      if (paramKey) localStorage.setItem("sb_key", paramKey);
       const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       const isDemoMode = SUPABASE_URL.includes("YOUR-PROJECT") || SUPABASE_ANON_KEY.includes("YOUR_");
 
