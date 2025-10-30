@@ -35,6 +35,14 @@
       .day.sat { border-color: #228be6; }
       .day.holiday { border-color: #fa5252; }
       .res-bar { background: rgba(173, 216, 230, 0.55); border: 1px solid #a5d8ff; border-radius: 6px; padding: 4px 8px; align-self: stretch; justify-self: stretch; display: flex; align-items: center; justify-content: center; color: #0b7285; font-weight: 600; z-index: 2; pointer-events: none; }
+      /* Modal */
+      .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: none; align-items: center; justify-content: center; z-index: 1000; }
+      .modal { background: #fff; width: min(92vw, 420px); border-radius: 10px; box-shadow: 0 12px 28px rgba(0,0,0,0.2); overflow: hidden; }
+      .modal-header { padding: 12px 16px; font-weight: 700; border-bottom: 1px solid #eee; }
+      .modal-body { padding: 16px; color: #333; }
+      .modal-actions { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 16px; border-top: 1px solid #eee; }
+      .btn { padding: 8px 12px; border-radius: 6px; border: 1px solid #ddd; background: #fff; cursor: pointer; }
+      .btn-primary { background: #228be6; color: #fff; border-color: #228be6; }
     </style>
     <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   </head>
@@ -83,11 +91,20 @@
       </table>
     </div>
 
+    <div id="modalBackdrop" class="modal-backdrop">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div id="modalTitle" class="modal-header"></div>
+        <div id="modalMessage" class="modal-body"></div>
+        <div id="modalActions" class="modal-actions"></div>
+      </div>
+    </div>
+
     <script>
       // 1) Configure Supabase
       const SUPABASE_URL = "https://YOUR-PROJECT.supabase.co"; // <- replace
       const SUPABASE_ANON_KEY = "YOUR_ANON_PUBLIC_KEY";        // <- replace
       const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      const isDemoMode = SUPABASE_URL.includes("YOUR-PROJECT") || SUPABASE_ANON_KEY.includes("YOUR_");
 
       // 2) App state
       let currentName = localStorage.getItem("member_name") || "";
@@ -128,6 +145,10 @@
       const monthsEl = document.getElementById("months");
       const bookBtn = document.getElementById("bookBtn");
       const summaryBody = document.getElementById("summaryBody");
+      const modalBackdrop = document.getElementById("modalBackdrop");
+      const modalTitle = document.getElementById("modalTitle");
+      const modalMessage = document.getElementById("modalMessage");
+      const modalActions = document.getElementById("modalActions");
 
       const monthNames = ["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
       const weekdayNames = ["일","월","화","수","목","금","토"];
@@ -237,6 +258,40 @@
         paintSelection();
       }
 
+      // Modal helpers
+      function openModal(title, message, buttons) {
+        modalTitle.textContent = title || "";
+        modalMessage.textContent = message || "";
+        modalActions.innerHTML = "";
+        for (const { label, variant, resolveValue } of buttons) {
+          const btn = document.createElement("button");
+          btn.className = `btn ${variant || ""}`.trim();
+          btn.textContent = label;
+          btn.addEventListener("click", () => {
+            closeModal();
+            if (typeof resolveValue === "function") resolveValue();
+          });
+          modalActions.appendChild(btn);
+        }
+        modalBackdrop.style.display = "flex";
+      }
+      function closeModal() { modalBackdrop.style.display = "none"; }
+      function infoModal(message, title = "알림") {
+        return new Promise((resolve) => {
+          openModal(title, message, [
+            { label: "확인", variant: "btn-primary", resolveValue: resolve }
+          ]);
+        });
+      }
+      function confirmModal(message, title = "확인") {
+        return new Promise((resolve) => {
+          openModal(title, message, [
+            { label: "아니오", variant: "", resolveValue: () => resolve(false) },
+            { label: "예", variant: "btn-primary", resolveValue: () => resolve(true) }
+          ]);
+        });
+      }
+
       // 5) Painting
       function paintBookings() {
         document.querySelectorAll(".day").forEach(el => {
@@ -335,22 +390,21 @@
       // 6) Selection logic
       async function onDayClick(dateStr) {
         if (!currentName) {
-          alert("먼저 이름을 입력하고 입장 버튼을 눌러주세요.");
+          await infoModal("먼저 이름을 입력하고 입장 버튼을 눌러주세요.");
           return;
         }
 
         const who = bookingsByDay.get(dateStr);
         // 이미 내 예약 → 취소 확인
         if (who && who === currentName) {
-          if (confirm(`${dateStr} 예약을 취소하시겠습니까?`)) {
-            cancelDates([dateStr]);
-          }
+          const ok = await confirmModal(`${dateStr} 예약을 취소하시겠습니까?`);
+          if (ok) cancelDates([dateStr]);
           return;
         }
 
         // 타인 예약 → 알림 (오버라이드 금지)
         if (who && who !== currentName) {
-          alert(`${dateStr}는 이미 ${who}님의 예약입니다.`);
+          await infoModal(`${dateStr}는 이미 ${who}님의 예약입니다.`);
           return;
         }
 
@@ -365,7 +419,7 @@
           selectingEnd = fmtDate(b);
           const nights = nightCount(selectingStart, selectingEnd);
           if (nights < minNights) {
-            alert(`최소 ${minNights}일 이상 연속으로 선택해야 합니다.`);
+            await infoModal(`최소 ${minNights}일 이상 연속으로 선택해야 합니다.`);
             // keep end but disable booking until enough days
           }
           // 예약 확정 확인 및 충돌 검사
@@ -376,14 +430,14 @@
               return w && w !== currentName;
             });
             if (conflicts.length > 0) {
-              alert(`선택한 기간에 이미 예약된 날짜가 포함되어 있습니다.`);
+              await infoModal(`선택한 기간에 이미 예약된 날짜가 포함되어 있습니다.`);
               selectingStart = null;
               selectingEnd = null;
               paintSelection();
               return;
             }
             const msg = `${selectingStart} ~ ${selectingEnd} (${nights}일) 예약을 확정하시겠습니까?`;
-            const ok = confirm(msg);
+            const ok = await confirmModal(msg);
             if (ok) {
               await bookDates(dates, currentName);
               selectingStart = null;
@@ -397,20 +451,30 @@
 
       // 7) Booking/cancel operations
       async function bookDates(dateList, memberName) {
+        if (isDemoMode) {
+          for (const day of dateList) bookingsByDay.set(day, memberName);
+          paintBookings();
+          return;
+        }
         // Upsert rows; last write wins (intentionally permissive)
         const rows = dateList.map(day => ({ day, member_name: memberName }));
         const { error } = await client.from("bookings").upsert(rows, { onConflict: "day" });
         if (error) {
           console.error(error);
-          alert("예약 중 오류가 발생했습니다.");
+          await infoModal("예약 중 오류가 발생했습니다.");
         }
       }
 
       async function cancelDates(dateList) {
+        if (isDemoMode) {
+          for (const day of dateList) bookingsByDay.delete(day);
+          paintBookings();
+          return;
+        }
         const { error } = await client.from("bookings").delete().in("day", dateList);
         if (error) {
           console.error(error);
-          alert("취소 중 오류가 발생했습니다.");
+          await infoModal("취소 중 오류가 발생했습니다.");
         }
       }
 
@@ -429,7 +493,7 @@
         if (!selectingStart || !selectingEnd) return;
         const nights = nightCount(selectingStart, selectingEnd);
         if (nights < minNights) {
-          alert(`최소 ${minNights}일 이상 연속으로 선택해야 합니다.`);
+          await infoModal(`최소 ${minNights}일 이상 연속으로 선택해야 합니다.`);
           return;
         }
         const [a, b] = [parseDate(selectingStart), parseDate(selectingEnd)].sort((x,y)=>x-y);
@@ -440,10 +504,10 @@
           return who && who !== currentName;
         });
         if (others.length > 0) {
-          alert(`선택한 기간에 이미 예약된 날짜가 포함되어 있습니다.`);
+          await infoModal(`선택한 기간에 이미 예약된 날짜가 포함되어 있습니다.`);
           return;
         }
-        const ok = confirm(`${selectingStart} ~ ${selectingEnd} (${nights}일) 예약을 확정하시겠습니까?`);
+        const ok = await confirmModal(`${selectingStart} ~ ${selectingEnd} (${nights}일) 예약을 확정하시겠습니까?`);
         if (!ok) return;
 
         await bookDates(dates, currentName);
@@ -457,7 +521,7 @@
       function setName(name) {
         currentName = name.trim();
         if (!isAllowedMember(currentName)) {
-          alert("허용된 멤버 이름이 아닙니다. 목록에서 선택해주세요.");
+          infoModal("허용된 멤버 이름이 아닙니다. 목록에서 선택해주세요.");
           return;
         }
         localStorage.setItem("member_name", currentName);
@@ -466,10 +530,10 @@
         paintBookings();
       }
 
-      saveNameBtn.addEventListener("click", () => {
+      saveNameBtn.addEventListener("click", async () => {
         const val = nameInput.value.trim();
-        if (!val) { alert("이름을 입력해주세요."); return; }
-        if (!isAllowedMember(val)) { alert("허용된 멤버 이름이 아닙니다. 목록에서 선택해주세요."); return; }
+        if (!val) { await infoModal("이름을 입력해주세요."); return; }
+        if (!isAllowedMember(val)) { await infoModal("허용된 멤버 이름이 아닙니다. 목록에서 선택해주세요."); return; }
         setName(val);
       });
 
