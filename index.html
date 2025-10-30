@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>숙소 캘린더 예약</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; color: #111; }
+      .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+      input[type="text"] { padding: 8px 10px; font-size: 14px; }
+      button { padding: 8px 12px; font-size: 14px; cursor: pointer; }
+      .calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+      .day { border: 1px solid #ddd; padding: 10px; min-height: 54px; border-radius: 6px; background: #fff; display: flex; flex-direction: column; gap: 6px; }
+      .day.disabled { background: #f7f7f7; color: #aaa; }
+      .day .dnum { font-weight: 600; font-size: 12px; color: #666; }
+      .day.selecting { outline: 2px solid #228be6; }
+      .day.mine { background: #e6f4ff; border-color: #b3ddff; }
+      .day.other { background: #f8f9fa; }
+      .legend { display: flex; gap: 12px; margin: 8px 0 16px; color: #555; font-size: 13px; }
+      .legend span { display: inline-flex; align-items: center; gap: 6px; }
+      .swatch { width: 14px; height: 14px; border-radius: 3px; display: inline-block; border: 1px solid #ccc; }
+      .swatch.mine { background: #e6f4ff; border-color: #b3ddff; }
+      .swatch.other { background: #f8f9fa; }
+      .months { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+      .month { border: 1px solid #eee; border-radius: 8px; padding: 12px; }
+      .month h3 { margin: 0 0 8px; font-size: 16px; }
+      .summary { margin-top: 24px; }
+      table { border-collapse: collapse; width: 100%; max-width: 520px; }
+      th, td { border: 1px solid #eee; padding: 8px; text-align: left; }
+      th { background: #fafafa; }
+      .muted { color: #888; font-size: 13px; }
+    </style>
+    <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  </head>
+  <body>
+    <h1>숙소 캘린더 예약</h1>
+
+    <div class="row">
+      <label>이름:
+        <input id="nameInput" type="text" placeholder="이름을 입력" />
+      </label>
+      <button id="saveNameBtn">입장</button>
+      <span id="nameStatus" class="muted"></span>
+    </div>
+
+    <div class="legend">
+      <span><span class="swatch"></span> 비어있음</span>
+      <span><span class="swatch mine"></span> 내 예약</span>
+      <span><span class="swatch other"></span> 타인 예약</span>
+    </div>
+
+    <div class="row">
+      <button id="bookBtn" disabled>선택한 날짜 예약</button>
+      <span class="muted">2일 이상 연속으로 선택해야 합니다.</span>
+    </div>
+
+    <div id="months" class="months"></div>
+
+    <div class="summary">
+      <h2>멤버별 총 숙박일</h2>
+      <table>
+        <thead><tr><th>이름</th><th>총 일수</th></tr></thead>
+        <tbody id="summaryBody"></tbody>
+      </table>
+    </div>
+
+    <script>
+      // 1) Configure Supabase
+      const SUPABASE_URL = "https://YOUR-PROJECT.supabase.co"; // <- replace
+      const SUPABASE_ANON_KEY = "YOUR_ANON_PUBLIC_KEY";        // <- replace
+      const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+      // 2) App state
+      let currentName = localStorage.getItem("member_name") || "";
+      let bookingsByDay = new Map(); // 'YYYY-MM-DD' -> member_name
+      let selectingStart = null;
+      let selectingEnd = null;
+      const minNights = 2; // inclusive of nights: requires 2 consecutive days
+
+      // 3) Helpers
+      const fmtDate = (d) => d.toISOString().slice(0,10);
+      const parseDate = (s) => new Date(s + "T00:00:00");
+      const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+      const rangeInclusive = (start, end) => {
+        const out = [];
+        let cur = new Date(start);
+        while (cur <= end) {
+          out.push(fmtDate(cur));
+          cur = addDays(cur, 1);
+        }
+        return out;
+      };
+      const nightCount = (startStr, endStr) => {
+        const start = parseDate(startStr), end = parseDate(endStr);
+        return Math.max(0, Math.round((end - start) / 86400000) + 1);
+      };
+
+      const nameInput = document.getElementById("nameInput");
+      const saveNameBtn = document.getElementById("saveNameBtn");
+      const nameStatus = document.getElementById("nameStatus");
+      const monthsEl = document.getElementById("months");
+      const bookBtn = document.getElementById("bookBtn");
+      const summaryBody = document.getElementById("summaryBody");
+
+      const monthNames = ["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
+      const weekdayNames = ["일","월","화","수","목","금","토"];
+
+      // 4) Calendar render
+      function buildMonth(year, monthIdx) {
+        const first = new Date(year, monthIdx, 1);
+        const last = new Date(year, monthIdx + 1, 0);
+        const startGrid = new Date(year, monthIdx, 1 - first.getDay());
+        const endGrid = new Date(year, monthIdx + 1, 6 - last.getDay());
+        const wrapper = document.createElement("div");
+        wrapper.className = "month";
+
+        const h = document.createElement("h3");
+        h.textContent = `${year}년 ${monthNames[monthIdx]}`;
+        wrapper.appendChild(h);
+
+        // Weekday header
+        const header = document.createElement("div");
+        header.className = "calendar";
+        weekdayNames.forEach(w => {
+          const e = document.createElement("div");
+          e.className = "muted";
+          e.style.textAlign = "center";
+          e.textContent = w;
+          header.appendChild(e);
+        });
+        wrapper.appendChild(header);
+
+        // Days grid
+        const grid = document.createElement("div");
+        grid.className = "calendar";
+
+        for (let d = new Date(startGrid); d <= endGrid; d = addDays(d, 1)) {
+          const dayEl = document.createElement("div");
+          dayEl.className = "day";
+          const inMonth = d.getMonth() === monthIdx;
+          if (!inMonth) dayEl.classList.add("disabled");
+
+          const label = document.createElement("div");
+          label.className = "dnum";
+          label.textContent = d.getDate();
+          dayEl.appendChild(label);
+
+          const nameEl = document.createElement("div");
+          nameEl.className = "who";
+          nameEl.style.fontSize = "13px";
+          nameEl.style.minHeight = "18px";
+          dayEl.appendChild(nameEl);
+
+          const dateStr = fmtDate(d);
+          dayEl.dataset.date = dateStr;
+
+          dayEl.addEventListener("click", () => onDayClick(dateStr));
+
+          grid.appendChild(dayEl);
+        }
+
+        wrapper.appendChild(grid);
+        return wrapper;
+      }
+
+      function renderMonths() {
+        monthsEl.innerHTML = "";
+        const today = new Date();
+        const monthsToShow = 4; // adjust as needed
+        for (let i = 0; i < monthsToShow; i++) {
+          const dt = new Date(today.getFullYear(), today.getMonth() + i, 1);
+          monthsEl.appendChild(buildMonth(dt.getFullYear(), dt.getMonth()));
+        }
+        paintBookings();
+        paintSelection();
+      }
+
+      // 5) Painting
+      function paintBookings() {
+        document.querySelectorAll(".day").forEach(el => {
+          const dateStr = el.dataset.date;
+          const who = bookingsByDay.get(dateStr);
+          const whoEl = el.querySelector(".who");
+          whoEl.textContent = who || "";
+          el.classList.remove("mine","other");
+          if (who) {
+            if (currentName && who === currentName) el.classList.add("mine");
+            else el.classList.add("other");
+          }
+        });
+        renderSummary();
+      }
+
+      function paintSelection() {
+        document.querySelectorAll(".day").forEach(el => el.classList.remove("selecting"));
+        if (!selectingStart || !selectingEnd) {
+          bookBtn.disabled = true;
+          return;
+        }
+        const nights = nightCount(selectingStart, selectingEnd);
+        bookBtn.disabled = nights < minNights;
+        const [a, b] = [parseDate(selectingStart), parseDate(selectingEnd)].sort((x,y)=>x-y);
+        for (let d = new Date(a); d <= b; d = addDays(d, 1)) {
+          const ds = fmtDate(d);
+          const el = document.querySelector(`.day[data-date="${ds}"]`);
+          if (el) el.classList.add("selecting");
+        }
+      }
+
+      // 6) Selection logic
+      function onDayClick(dateStr) {
+        if (!currentName) {
+          alert("먼저 이름을 입력하고 입장 버튼을 눌러주세요.");
+          return;
+        }
+
+        const who = bookingsByDay.get(dateStr);
+        // If clicking a single day that is yours → offer cancel
+        if (who && who === currentName) {
+          if (confirm(`${dateStr} 예약을 취소하시겠습니까?`)) {
+            cancelDates([dateStr]);
+          }
+          return;
+        }
+
+        // If occupied by others → offer override
+        if (who && who !== currentName) {
+          if (confirm(`${who}님의 예약입니다. 변경하시겠습니까?`)) {
+            bookDates([dateStr], currentName);
+          }
+          return;
+        }
+
+        // Empty day → selection for range booking
+        if (!selectingStart || (selectingStart && selectingEnd)) {
+          selectingStart = dateStr;
+          selectingEnd = null;
+        } else {
+          // set end
+          const [a, b] = [parseDate(selectingStart), parseDate(dateStr)].sort((x,y)=>x-y);
+          selectingStart = fmtDate(a);
+          selectingEnd = fmtDate(b);
+          const nights = nightCount(selectingStart, selectingEnd);
+          if (nights < minNights) {
+            alert(`최소 ${minNights}일 이상 연속으로 선택해야 합니다.`);
+            // keep end but disable booking until enough days
+          }
+        }
+        paintSelection();
+      }
+
+      // 7) Booking/cancel operations
+      async function bookDates(dateList, memberName) {
+        // Upsert rows; last write wins (intentionally permissive)
+        const rows = dateList.map(day => ({ day, member_name: memberName }));
+        const { error } = await client.from("bookings").upsert(rows, { onConflict: "day" });
+        if (error) {
+          console.error(error);
+          alert("예약 중 오류가 발생했습니다.");
+        }
+      }
+
+      async function cancelDates(dateList) {
+        const { error } = await client.from("bookings").delete().in("day", dateList);
+        if (error) {
+          console.error(error);
+          alert("취소 중 오류가 발생했습니다.");
+        }
+      }
+
+      // 8) Summary
+      function renderSummary() {
+        const counts = new Map();
+        for (const [day, who] of bookingsByDay.entries()) {
+          counts.set(who, (counts.get(who) || 0) + 1);
+        }
+        const entries = [...counts.entries()].sort((a,b) => a[0].localeCompare(b[0]));
+        summaryBody.innerHTML = entries.map(([name, total]) => `<tr><td>${name}</td><td>${total}</td></tr>`).join("") || `<tr><td colspan="2" class="muted">예약이 없습니다.</td></tr>`;
+      }
+
+      // 9) Range booking button
+      bookBtn.addEventListener("click", async () => {
+        if (!selectingStart || !selectingEnd) return;
+        const nights = nightCount(selectingStart, selectingEnd);
+        if (nights < minNights) {
+          alert(`최소 ${minNights}일 이상 연속으로 선택해야 합니다.`);
+          return;
+        }
+        const [a, b] = [parseDate(selectingStart), parseDate(selectingEnd)].sort((x,y)=>x-y);
+        const dates = rangeInclusive(a, b);
+
+        // Mixed occupancy handling:
+        // - If my dates: I’m re-booking them (no-op)
+        // - If others’ dates: we allow override (confirm once)
+        const others = dates.filter(d => {
+          const who = bookingsByDay.get(d);
+          return who && who !== currentName;
+        });
+        if (others.length > 0) {
+          const distinctOthers = [...new Set(others.map(d => bookingsByDay.get(d)))];
+          const names = distinctOthers.join(", ");
+          const ok = confirm(`선택 구간 일부가 ${names}님의 예약입니다. 변경하시겠습니까?`);
+          if (!ok) return;
+        }
+
+        await bookDates(dates, currentName);
+        // Reset selection
+        selectingStart = null;
+        selectingEnd = null;
+        paintSelection();
+      });
+
+      // 10) Name handling
+      function setName(name) {
+        currentName = name.trim();
+        localStorage.setItem("member_name", currentName);
+        nameInput.value = currentName;
+        nameStatus.textContent = currentName ? `입장됨: ${currentName}` : "";
+        paintBookings();
+      }
+
+      saveNameBtn.addEventListener("click", () => {
+        const val = nameInput.value.trim();
+        if (!val) { alert("이름을 입력해주세요."); return; }
+        setName(val);
+      });
+
+      // 11) Load initial data and subscribe to realtime
+      async function loadInitial() {
+        const today = new Date();
+        const start = fmtDate(new Date(today.getFullYear(), today.getMonth(), 1));
+        const end = fmtDate(new Date(today.getFullYear(), today.getMonth() + 4, 0)); // 4 months window
+        const { data, error } = await client
+          .from("bookings")
+          .select("day, member_name")
+          .gte("day", start)
+          .lte("day", end);
+        if (error) {
+          console.error(error);
+          return;
+        }
+        bookingsByDay.clear();
+        for (const row of data) bookingsByDay.set(row.day, row.member_name);
+        paintBookings();
+      }
+
+      function subscribeRealtime() {
+        client
+          .channel("bookings-ch")
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "bookings" },
+            (payload) => {
+              if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
+                bookingsByDay.set(payload.new.day, payload.new.member_name);
+              } else if (payload.eventType === "DELETE") {
+                bookingsByDay.delete(payload.old.day);
+              }
+              paintBookings();
+            }
+          )
+          .subscribe();
+      }
+
+      // 12) Init
+      (function init() {
+        if (currentName) {
+          nameInput.value = currentName;
+          nameStatus.textContent = `입장됨: ${currentName}`;
+        }
+        renderMonths();
+        loadInitial();
+        subscribeRealtime();
+      })();
+    </script>
+  </body>
+</html>
