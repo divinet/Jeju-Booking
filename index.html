@@ -29,6 +29,8 @@
       th, td { border: 1px solid #eee; padding: 8px; text-align: left; }
       th { background: #fafafa; }
       .muted { color: #888; font-size: 13px; }
+      .day.sun { border-color: #fa5252; }
+      .day.sat { border-color: #228be6; }
     </style>
     <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   </head>
@@ -139,6 +141,9 @@
           dayEl.className = "day";
           const inMonth = d.getMonth() === monthIdx;
           if (!inMonth) dayEl.classList.add("disabled");
+          const dow = d.getDay();
+          if (dow === 0) dayEl.classList.add("sun");
+          if (dow === 6) dayEl.classList.add("sat");
 
           const label = document.createElement("div");
           label.className = "dnum";
