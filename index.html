@@ -43,7 +43,20 @@
 
     <div class="row">
       <label>이름:
-        <input id="nameInput" type="text" placeholder="이름을 입력" />
+        <input id="nameInput" type="text" placeholder="이름을 입력" list="membersList" />
+        <datalist id="membersList">
+          <option value="이시원"></option>
+          <option value="김영달"></option>
+          <option value="서정훈"></option>
+          <option value="박승원"></option>
+          <option value="지승환"></option>
+          <option value="손지호"></option>
+          <option value="김강안"></option>
+          <option value="신현성"></option>
+          <option value="민용재"></option>
+          <option value="배봉건"></option>
+          <option value="변성윤"></option>
+        </datalist>
       </label>
       <button id="saveNameBtn">입장</button>
       <span id="nameStatus" class="muted"></span>
@@ -121,6 +134,12 @@
       const calendarStartYear = 2025;
       const calendarStartMonthIdx = 10; // 0-indexed → 10 = 11월
       const monthsToShow = 24; // 스크롤로 쭉 내려볼 수 있도록 충분히 많이 표시
+
+      const allowedMembers = [
+        "이시원","김영달","서정훈","박승원","지승환",
+        "손지호","김강안","신현성","민용재","배봉건","변성윤"
+      ];
+      const isAllowedMember = (name) => allowedMembers.includes(name.trim());
 
       // 공휴일: YYYY-MM-DD → 이름
       const holidays = new Map([
@@ -437,6 +456,10 @@
       // 10) Name handling
       function setName(name) {
         currentName = name.trim();
+        if (!isAllowedMember(currentName)) {
+          alert("허용된 멤버 이름이 아닙니다. 목록에서 선택해주세요.");
+          return;
+        }
         localStorage.setItem("member_name", currentName);
         nameInput.value = currentName;
         updateNameStatus();
@@ -446,6 +469,7 @@
       saveNameBtn.addEventListener("click", () => {
         const val = nameInput.value.trim();
         if (!val) { alert("이름을 입력해주세요."); return; }
+        if (!isAllowedMember(val)) { alert("허용된 멤버 이름이 아닙니다. 목록에서 선택해주세요."); return; }
         setName(val);
       });
 
@@ -488,6 +512,10 @@
       // 12) Init
       (function init() {
         if (currentName) {
+          if (!isAllowedMember(currentName)) {
+            currentName = "";
+            localStorage.removeItem("member_name");
+          }
           nameInput.value = currentName;
           updateNameStatus();
         }
