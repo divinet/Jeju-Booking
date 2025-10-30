@@ -9,9 +9,9 @@
       .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
       input[type="text"] { padding: 8px 10px; font-size: 14px; }
       button { padding: 8px 12px; font-size: 14px; cursor: pointer; }
-      .calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+      .calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; position: relative; }
       .day { border: 1px solid #ddd; padding: 10px; min-height: 54px; border-radius: 6px; background: #fff; display: flex; flex-direction: column; gap: 6px; }
-      .day.disabled { background: #f7f7f7; color: #aaa; }
+      .blank { min-height: 54px; }
       .day .dnum { font-weight: 600; font-size: 12px; color: #666; }
       .day.selecting { background: #e7f5ff; border-color: #a5d8ff; }
       .day.select-start { background: #d3f9d8; border-color: #8ce99a; }
@@ -37,6 +37,8 @@
       .res-bar { border-radius: 6px; padding: 4px 8px; align-self: stretch; justify-self: stretch; display: flex; align-items: center; justify-content: center; font-weight: 600; z-index: 2; pointer-events: auto; cursor: pointer; }
       .res-bar.mine { background: rgba(173, 216, 230, 0.55); border: 1px solid #a5d8ff; color: #0b7285; }
       .res-bar.other { background: #f1f3f5; border: 1px solid #dee2e6; color: #495057; }
+      /* Bars overlay */
+      .res-overlay { position: absolute; inset: 0; display: grid; grid-template-columns: inherit; gap: 6px; pointer-events: none; }
       /* Modal */
       .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: none; align-items: center; justify-content: center; z-index: 1000; }
       .modal { background: #fff; width: min(92vw, 420px); border-radius: 10px; box-shadow: 0 12px 28px rgba(0,0,0,0.2); overflow: hidden; }
@@ -215,10 +217,15 @@
         grid.className = "calendar";
 
         for (let d = new Date(startGrid); d <= endGrid; d = addDays(d, 1)) {
+          const inMonth = d.getMonth() === monthIdx;
+          if (!inMonth) {
+            const blank = document.createElement("div");
+            blank.className = "blank";
+            grid.appendChild(blank);
+            continue;
+          }
           const dayEl = document.createElement("div");
           dayEl.className = "day";
-          const inMonth = d.getMonth() === monthIdx;
-          if (!inMonth) dayEl.classList.add("disabled");
           const dow = d.getDay();
           if (dow === 0) dayEl.classList.add("sun");
           if (dow === 6) dayEl.classList.add("sat");
@@ -246,6 +253,11 @@
           grid.appendChild(dayEl);
         }
 
+        // overlay for reservation bars
+        const overlay = document.createElement("div");
+        overlay.className = "res-overlay";
+        grid.appendChild(overlay);
+
         wrapper.appendChild(grid);
         return wrapper;
       }
@@ -263,7 +275,12 @@
       // Modal helpers
       function openModal(title, message, buttons) {
         modalTitle.textContent = title || "";
-        modalMessage.textContent = message || "";
+        if (typeof message === "string") {
+          modalMessage.textContent = message;
+        } else {
+          modalMessage.innerHTML = "";
+          if (message instanceof Node) modalMessage.appendChild(message);
+        }
         modalActions.innerHTML = "";
         for (const { label, variant, resolveValue } of buttons) {
           const btn = document.createElement("button");
@@ -290,6 +307,26 @@
           openModal(title, message, [
             { label: "아니오", variant: "", resolveValue: () => resolve(false) },
             { label: "예", variant: "btn-primary", resolveValue: () => resolve(true) }
+          ]);
+        });
+      }
+
+      async function selectMemberModal(title = "예약자 선택") {
+        return new Promise((resolve) => {
+          const list = document.createElement("div");
+          list.style.display = "grid";
+          list.style.gridTemplateColumns = "repeat(2, 1fr)";
+          list.style.gap = "8px";
+          allowedMembers.forEach(name => {
+            const btn = document.createElement("button");
+            btn.className = "btn";
+            btn.textContent = name;
+            btn.style.textAlign = "center";
+            btn.addEventListener("click", () => { closeModal(); resolve(name); });
+            list.appendChild(btn);
+          });
+          openModal(title, list, [
+            { label: "취소", variant: "", resolveValue: () => resolve(null) }
           ]);
         });
       }
@@ -326,9 +363,13 @@
           const grids = monthEl.querySelectorAll('.calendar');
           if (grids.length < 2) return;
           const grid = grids[1]; // 두 번째 .calendar가 날짜 그리드
-          grid.querySelectorAll('.res-bar').forEach(b => b.remove());
+          const overlay = grid.querySelector('.res-overlay') || (() => { const o = document.createElement('div'); o.className = 'res-overlay'; grid.appendChild(o); return o; })();
+          overlay.querySelectorAll('.res-bar').forEach(b => b.remove());
 
-          const dayEls = Array.from(grid.children);
+          // day elements only (exclude overlay)
+          const dayEls = Array.from(grid.children).filter(c => c.classList && (c.classList.contains('day') || c.classList.contains('blank')));
+          const numRows = Math.ceil(dayEls.length / 7);
+          overlay.style.gridTemplateRows = `repeat(${numRows}, 1fr)`;
           // 6주 * 7일 = 42개 (가정)
           for (let row = 0; row < 6; row++) {
             let col = 0;
@@ -376,7 +417,7 @@
                 const dates = rangeInclusive(a, b);
                 await cancelDates(dates);
               });
-              grid.appendChild(bar);
+              overlay.appendChild(bar);
               col += span;
             }
           }
@@ -460,10 +501,18 @@
               paintSelection();
               return;
             }
+            // 예약자 선택 (현재 이름이 없거나 변경 원할 때)
+            let booker = currentName;
+            if (!booker) {
+              const picked = await selectMemberModal();
+              if (!picked) return; // 취소
+              setName(picked);
+              booker = picked;
+            }
             const msg = `${selectingStart} ~ ${selectingEnd} (${nights}일) 예약을 확정하시겠습니까?`;
             const ok = await confirmModal(msg);
             if (ok) {
-              await bookDates(dates, currentName);
+              await bookDates(dates, booker);
               selectingStart = null;
               selectingEnd = null;
               paintSelection();
@@ -478,6 +527,9 @@
         if (isDemoMode) {
           for (const day of dateList) bookingsByDay.set(day, memberName);
           paintBookings();
+          try {
+            localStorage.setItem("bookings_local", JSON.stringify([...bookingsByDay.entries()]));
+          } catch {}
           return;
         }
         // Upsert rows; last write wins (intentionally permissive)
@@ -493,6 +545,9 @@
         if (isDemoMode) {
           for (const day of dateList) bookingsByDay.delete(day);
           paintBookings();
+          try {
+            localStorage.setItem("bookings_local", JSON.stringify([...bookingsByDay.entries()]));
+          } catch {}
           return;
         }
         const { error } = await client.from("bookings").delete().in("day", dateList);
@@ -531,10 +586,18 @@
           await infoModal(`선택한 기간에 이미 예약된 날짜가 포함되어 있습니다.`);
           return;
         }
+        // 예약자 선택 (현재 이름이 없으면 선택)
+        let booker = currentName;
+        if (!booker) {
+          const picked = await selectMemberModal();
+          if (!picked) return;
+          setName(picked);
+          booker = picked;
+        }
         const ok = await confirmModal(`${selectingStart} ~ ${selectingEnd} (${nights}일) 예약을 확정하시겠습니까?`);
         if (!ok) return;
 
-        await bookDates(dates, currentName);
+        await bookDates(dates, booker);
         // Reset selection
         selectingStart = null;
         selectingEnd = null;
@@ -563,6 +626,15 @@
 
       // 11) Load initial data and subscribe to realtime
       async function loadInitial() {
+        if (isDemoMode) {
+          try {
+            const raw = localStorage.getItem("bookings_local");
+            const arr = raw ? JSON.parse(raw) : [];
+            bookingsByDay = new Map(arr);
+          } catch { bookingsByDay = new Map(); }
+          paintBookings();
+          return;
+        }
         const start = fmtDate(new Date(calendarStartYear, calendarStartMonthIdx, 1));
         const end = fmtDate(new Date(calendarStartYear, calendarStartMonthIdx + monthsToShow, 0));
         const { data, error } = await client
@@ -580,6 +652,7 @@
       }
 
       function subscribeRealtime() {
+        if (isDemoMode) return; // no realtime in demo/local mode
         client
           .channel("bookings-ch")
           .on(
