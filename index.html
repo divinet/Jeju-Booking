@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>숙소 캘린더 예약</title>
+    <title>Grand Villa in Jeju</title>
     <style>
       body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; color: #111; }
       .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
@@ -34,11 +34,12 @@
       .day.sun { border-color: #fa5252; }
       .day.sat { border-color: #228be6; }
       .day.holiday { border-color: #fa5252; }
+      .res-bar { background: rgba(173, 216, 230, 0.55); border: 1px solid #a5d8ff; border-radius: 6px; padding: 4px 8px; align-self: stretch; justify-self: stretch; display: flex; align-items: center; justify-content: center; color: #0b7285; font-weight: 600; z-index: 2; pointer-events: none; }
     </style>
     <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   </head>
   <body>
-    <h1>숙소 캘린더 예약</h1>
+    <h1>Grand Villa in Jeju</h1>
 
     <div class="row">
       <label>이름:
@@ -223,14 +224,65 @@
           const dateStr = el.dataset.date;
           const who = bookingsByDay.get(dateStr);
           const whoEl = el.querySelector(".who");
-          whoEl.textContent = who || "";
+          // 개별 박스 내 텍스트는 지우고, 구간 바에 이름을 표시
+          whoEl.textContent = "";
           el.classList.remove("mine","other");
           if (who) {
             if (currentName && who === currentName) el.classList.add("mine");
             else el.classList.add("other");
           }
         });
+        paintReservationBars();
         renderSummary();
+        updateNameStatus();
+      }
+
+      function updateNameStatus() {
+        if (!currentName) { nameStatus.textContent = ""; return; }
+        let mineCount = 0;
+        for (const who of bookingsByDay.values()) if (who === currentName) mineCount++;
+        nameStatus.textContent = `입장됨: ${currentName} (${mineCount}일)`;
+      }
+
+      function paintReservationBars() {
+        // 월별 그리드마다 기존 바 제거
+        document.querySelectorAll('.month').forEach(monthEl => {
+          const grids = monthEl.querySelectorAll('.calendar');
+          if (grids.length < 2) return;
+          const grid = grids[1]; // 두 번째 .calendar가 날짜 그리드
+          grid.querySelectorAll('.res-bar').forEach(b => b.remove());
+
+          const dayEls = Array.from(grid.children);
+          // 6주 * 7일 = 42개 (가정)
+          for (let row = 0; row < 6; row++) {
+            let col = 0;
+            while (col < 7) {
+              const i = row * 7 + col;
+              const el = dayEls[i];
+              if (!el || !el.classList || !el.classList.contains('day')) { col++; continue; }
+              const dateStr = el.dataset.date;
+              const who = bookingsByDay.get(dateStr);
+              if (!who) { col++; continue; }
+              // 연속 구간 길이 계산 (같은 이름)
+              let span = 1;
+              for (let c = col + 1; c < 7; c++) {
+                const j = row * 7 + c;
+                const el2 = dayEls[j];
+                if (!el2 || !el2.classList || !el2.classList.contains('day')) break;
+                const who2 = bookingsByDay.get(el2.dataset.date);
+                if (who2 === who) span++; else break;
+              }
+              // 바 생성
+              const bar = document.createElement('div');
+              bar.className = 'res-bar';
+              bar.textContent = who;
+              bar.style.gridColumn = `${col + 1} / span ${span}`;
+              bar.style.gridRow = `${row + 1}`;
+              grid.appendChild(bar);
+              col += span;
+            }
+          }
+        });
       }
 
       function paintSelection() {
@@ -262,14 +314,14 @@
       }
 
       // 6) Selection logic
-      function onDayClick(dateStr) {
+      async function onDayClick(dateStr) {
         if (!currentName) {
           alert("먼저 이름을 입력하고 입장 버튼을 눌러주세요.");
           return;
         }
 
         const who = bookingsByDay.get(dateStr);
-        // If clicking a single day that is yours → offer cancel
+        // 이미 내 예약 → 취소 확인
         if (who && who === currentName) {
           if (confirm(`${dateStr} 예약을 취소하시겠습니까?`)) {
             cancelDates([dateStr]);
@@ -277,11 +329,9 @@
           return;
         }
 
-        // If occupied by others → offer override
+        // 타인 예약 → 알림 (오버라이드 금지)
         if (who && who !== currentName) {
-          if (confirm(`${who}님의 예약입니다. 변경하시겠습니까?`)) {
-            bookDates([dateStr], currentName);
-          }
+          alert(`${dateStr}는 이미 ${who}님의 예약입니다.`);
           return;
         }
 
@@ -298,6 +348,29 @@
           if (nights < minNights) {
             alert(`최소 ${minNights}일 이상 연속으로 선택해야 합니다.`);
             // keep end but disable booking until enough days
+          }
+          // 예약 확정 확인 및 충돌 검사
+          if (nights >= minNights) {
+            const dates = rangeInclusive(a, b);
+            const conflicts = dates.filter(d => {
+              const w = bookingsByDay.get(d);
+              return w && w !== currentName;
+            });
+            if (conflicts.length > 0) {
+              alert(`선택한 기간에 이미 예약된 날짜가 포함되어 있습니다.`);
+              selectingStart = null;
+              selectingEnd = null;
+              paintSelection();
+              return;
+            }
+            const msg = `${selectingStart} ~ ${selectingEnd} (${nights}일) 예약을 확정하시겠습니까?`;
+            const ok = confirm(msg);
+            if (ok) {
+              await bookDates(dates, currentName);
+              selectingStart = null;
+              selectingEnd = null;
+              paintSelection();
+            }
           }
         }
         paintSelection();
@@ -342,20 +415,17 @@
         }
         const [a, b] = [parseDate(selectingStart), parseDate(selectingEnd)].sort((x,y)=>x-y);
         const dates = rangeInclusive(a, b);
-
-        // Mixed occupancy handling:
-        // - If my dates: I’m re-booking them (no-op)
-        // - If others’ dates: we allow override (confirm once)
+        // 충돌 금지: 타인 예약 포함 시 거절
         const others = dates.filter(d => {
           const who = bookingsByDay.get(d);
           return who && who !== currentName;
         });
         if (others.length > 0) {
-          const distinctOthers = [...new Set(others.map(d => bookingsByDay.get(d)))];
-          const names = distinctOthers.join(", ");
-          const ok = confirm(`선택 구간 일부가 ${names}님의 예약입니다. 변경하시겠습니까?`);
-          if (!ok) return;
+          alert(`선택한 기간에 이미 예약된 날짜가 포함되어 있습니다.`);
+          return;
         }
+        const ok = confirm(`${selectingStart} ~ ${selectingEnd} (${nights}일) 예약을 확정하시겠습니까?`);
+        if (!ok) return;
 
         await bookDates(dates, currentName);
         // Reset selection
@@ -369,7 +439,7 @@
         currentName = name.trim();
         localStorage.setItem("member_name", currentName);
         nameInput.value = currentName;
-        nameStatus.textContent = currentName ? `입장됨: ${currentName}` : "";
+        updateNameStatus();
         paintBookings();
       }
 
@@ -419,7 +489,7 @@
       (function init() {
         if (currentName) {
           nameInput.value = currentName;
-          nameStatus.textContent = `입장됨: ${currentName}`;
+          updateNameStatus();
         }
         renderMonths();
         loadInitial();
