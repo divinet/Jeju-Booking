@@ -34,7 +34,9 @@
       .day.sun { border-color: #fa5252; }
       .day.sat { border-color: #228be6; }
       .day.holiday { border-color: #fa5252; }
-      .res-bar { background: rgba(173, 216, 230, 0.55); border: 1px solid #a5d8ff; border-radius: 6px; padding: 4px 8px; align-self: stretch; justify-self: stretch; display: flex; align-items: center; justify-content: center; color: #0b7285; font-weight: 600; z-index: 2; pointer-events: none; }
+      .res-bar { border-radius: 6px; padding: 4px 8px; align-self: stretch; justify-self: stretch; display: flex; align-items: center; justify-content: center; font-weight: 600; z-index: 2; pointer-events: auto; cursor: pointer; }
+      .res-bar.mine { background: rgba(173, 216, 230, 0.55); border: 1px solid #a5d8ff; color: #0b7285; }
+      .res-bar.other { background: #f1f3f5; border: 1px solid #dee2e6; color: #495057; }
       /* Modal */
       .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: none; align-items: center; justify-content: center; z-index: 1000; }
       .modal { background: #fff; width: min(92vw, 420px); border-radius: 10px; box-shadow: 0 12px 28px rgba(0,0,0,0.2); overflow: hidden; }
@@ -352,6 +354,28 @@
               bar.textContent = who;
               bar.style.gridColumn = `${col + 1} / span ${span}`;
               bar.style.gridRow = `${row + 1}`;
+              // start/end/owner metadata
+              const startDate = dayEls[i]?.dataset?.date;
+              const endDate = dayEls[i + span - 1]?.dataset?.date;
+              if (startDate) bar.dataset.start = startDate;
+              if (endDate) bar.dataset.end = endDate;
+              bar.dataset.who = who;
+              if (currentName && who === currentName) bar.classList.add('mine');
+              else bar.classList.add('other');
+              bar.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                const owner = bar.dataset.who;
+                const s = bar.dataset.start;
+                const e = bar.dataset.end;
+                if (!s || !e) return;
+                if (!currentName) { await infoModal("먼저 이름을 입력하고 입장 버튼을 눌러주세요."); return; }
+                if (currentName !== owner) { await infoModal(`${s} ~ ${e} 구간은 ${owner}님의 예약입니다.`); return; }
+                const ok = await confirmModal(`${s} ~ ${e} 예약을 취소하시겠습니까?`);
+                if (!ok) return;
+                const [a, b] = [parseDate(s), parseDate(e)].sort((x,y)=>x-y);
+                const dates = rangeInclusive(a, b);
+                await cancelDates(dates);
+              });
               grid.appendChild(bar);
               col += span;
             }
