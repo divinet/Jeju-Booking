@@ -13,9 +13,9 @@
       .day { border: 1px solid #ddd; padding: 10px; min-height: 54px; border-radius: 6px; background: #fff; display: flex; flex-direction: column; gap: 6px; }
       .day.disabled { background: #f7f7f7; color: #aaa; }
       .day .dnum { font-weight: 600; font-size: 12px; color: #666; }
-      .day.selecting { outline: 2px solid #228be6; }
-      .day.select-start { outline: 2px solid #40c057; box-shadow: 0 0 0 2px rgba(64,192,87,0.15) inset; }
-      .day.select-end { outline: 2px solid #faad14; box-shadow: 0 0 0 2px rgba(250,173,20,0.18) inset; }
+      .day.selecting { background: #e7f5ff; border-color: #a5d8ff; }
+      .day.select-start { background: #d3f9d8; border-color: #8ce99a; }
+      .day.select-end { background: #fff3bf; border-color: #ffd43b; }
       .day.mine { background: #e6f4ff; border-color: #b3ddff; }
       .day.other { background: #f8f9fa; }
       .legend { display: flex; gap: 12px; margin: 8px 0 16px; color: #555; font-size: 13px; }
@@ -82,8 +82,16 @@
       const minNights = 2; // inclusive of nights: requires 2 consecutive days
 
       // 3) Helpers
-      const fmtDate = (d) => d.toISOString().slice(0,10);
-      const parseDate = (s) => new Date(s + "T00:00:00");
+      const fmtDate = (d) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      };
+      const parseDate = (s) => {
+        const [y, m, d] = s.split("-").map(Number);
+        return new Date(y, m - 1, d);
+      };
       const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
       const rangeInclusive = (start, end) => {
         const out = [];
@@ -108,6 +116,9 @@
 
       const monthNames = ["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
       const weekdayNames = ["일","월","화","수","목","금","토"];
+      const calendarStartYear = 2025;
+      const calendarStartMonthIdx = 10; // 0-indexed → 10 = 11월
+      const monthsToShow = 24; // 스크롤로 쭉 내려볼 수 있도록 충분히 많이 표시
 
       // 4) Calendar render
       function buildMonth(year, monthIdx) {
@@ -172,10 +183,8 @@
 
       function renderMonths() {
         monthsEl.innerHTML = "";
-        const today = new Date();
-        const monthsToShow = 4; // adjust as needed
         for (let i = 0; i < monthsToShow; i++) {
-          const dt = new Date(today.getFullYear(), today.getMonth() + i, 1);
+          const dt = new Date(calendarStartYear, calendarStartMonthIdx + i, 1);
           monthsEl.appendChild(buildMonth(dt.getFullYear(), dt.getMonth()));
         }
         paintBookings();
@@ -346,9 +355,8 @@
 
       // 11) Load initial data and subscribe to realtime
       async function loadInitial() {
-        const today = new Date();
-        const start = fmtDate(new Date(today.getFullYear(), today.getMonth(), 1));
-        const end = fmtDate(new Date(today.getFullYear(), today.getMonth() + 4, 0)); // 4 months window
+        const start = fmtDate(new Date(calendarStartYear, calendarStartMonthIdx, 1));
+        const end = fmtDate(new Date(calendarStartYear, calendarStartMonthIdx + monthsToShow, 0));
         const { data, error } = await client
           .from("bookings")
           .select("day, member_name")
