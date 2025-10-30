@@ -14,6 +14,8 @@
       .day.disabled { background: #f7f7f7; color: #aaa; }
       .day .dnum { font-weight: 600; font-size: 12px; color: #666; }
       .day.selecting { outline: 2px solid #228be6; }
+      .day.select-start { outline: 2px solid #40c057; box-shadow: 0 0 0 2px rgba(64,192,87,0.15) inset; }
+      .day.select-end { outline: 2px solid #faad14; box-shadow: 0 0 0 2px rgba(250,173,20,0.18) inset; }
       .day.mine { background: #e6f4ff; border-color: #b3ddff; }
       .day.other { background: #f8f9fa; }
       .legend { display: flex; gap: 12px; margin: 8px 0 16px; color: #555; font-size: 13px; }
@@ -197,18 +199,30 @@
       }
 
       function paintSelection() {
-        document.querySelectorAll(".day").forEach(el => el.classList.remove("selecting"));
-        if (!selectingStart || !selectingEnd) {
+        document.querySelectorAll(".day").forEach(el => el.classList.remove("selecting","select-start","select-end"));
+        // Only start chosen → highlight start day
+        if (selectingStart && !selectingEnd) {
+          const startEl = document.querySelector(`.day[data-date="${selectingStart}"]`);
+          if (startEl) startEl.classList.add("select-start");
           bookBtn.disabled = true;
           return;
         }
-        const nights = nightCount(selectingStart, selectingEnd);
-        bookBtn.disabled = nights < minNights;
-        const [a, b] = [parseDate(selectingStart), parseDate(selectingEnd)].sort((x,y)=>x-y);
-        for (let d = new Date(a); d <= b; d = addDays(d, 1)) {
-          const ds = fmtDate(d);
-          const el = document.querySelector(`.day[data-date="${ds}"]`);
-          if (el) el.classList.add("selecting");
+        // Range chosen → highlight full span and mark ends
+        if (selectingStart && selectingEnd) {
+          const nights = nightCount(selectingStart, selectingEnd);
+          bookBtn.disabled = nights < minNights;
+          const [a, b] = [parseDate(selectingStart), parseDate(selectingEnd)].sort((x,y)=>x-y);
+          for (let d = new Date(a); d <= b; d = addDays(d, 1)) {
+            const ds = fmtDate(d);
+            const el = document.querySelector(`.day[data-date="${ds}"]`);
+            if (el) el.classList.add("selecting");
+          }
+          const startEl = document.querySelector(`.day[data-date="${fmtDate(a)}"]`);
+          const endEl = document.querySelector(`.day[data-date="${fmtDate(b)}"]`);
+          if (startEl) startEl.classList.add("select-start");
+          if (endEl) endEl.classList.add("select-end");
+        } else {
+          bookBtn.disabled = true;
         }
       }
 
