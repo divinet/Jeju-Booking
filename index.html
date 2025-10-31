@@ -101,18 +101,23 @@
       .swatch.other { background: #f5f5f5; border-color: #e0e0e0; }
       .months { 
         display: grid; 
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); 
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
         gap: 16px; 
         margin-bottom: 32px;
       }
       @media (max-width: 768px) {
-        .months { gap: 12px; }
+        .months { 
+          gap: 12px; 
+          grid-template-columns: 1fr;
+        }
       }
       .month { 
         background: #fff;
         border-radius: 8px;
         padding: 12px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        width: 100%;
+        box-sizing: border-box;
       }
       @media (max-width: 768px) {
         .month { padding: 8px; }
