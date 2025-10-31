@@ -550,6 +550,9 @@
           console.error(error);
           await infoModal("예약 중 오류가 발생했습니다.");
         } else {
+          // Immediately update local state (optimistic update)
+          for (const day of dateList) bookingsByDay.set(day, memberName);
+          paintBookings();
           // broadcast refresh to all clients
           try { client.channel("booking-sync").send({ type: "broadcast", event: "refresh", payload: { ts: Date.now() } }); } catch {}
         }
@@ -569,6 +572,9 @@
           console.error(error);
           await infoModal("취소 중 오류가 발생했습니다.");
         } else {
+          // Immediately update local state (optimistic update)
+          for (const day of dateList) bookingsByDay.delete(day);
+          paintBookings();
           // broadcast refresh to all clients
           try { client.channel("booking-sync").send({ type: "broadcast", event: "refresh", payload: { ts: Date.now() } }); } catch {}
         }
@@ -708,15 +714,33 @@
         // 2) Broadcast fallback (works without replication)
         const broadcastCh = client.channel("booking-sync");
         broadcastCh.on("broadcast", { event: "refresh" }, () => {
-          // Re-fetch to sync state across clients
-          loadInitial();
+          // Minimal refresh - just re-fetch bookings, not members
+          (async () => {
+            try {
+              const start = fmtDate(new Date(calendarStartYear, calendarStartMonthIdx, 1));
+              const end = fmtDate(new Date(calendarStartYear, calendarStartMonthIdx + monthsToShow, 0));
+              const { data: bdata } = await client
+                .from("booking_days")
+                .select("the_date, member_id")
+                .gte("the_date", start)
+                .lte("the_date", end);
+              if (bdata) {
+                bookingsByDay.clear();
+                for (const row of bdata) {
+                  const nm = memberNameById.get(row.member_id) || "";
+                  if (nm) bookingsByDay.set(row.the_date, nm);
+                }
+                paintBookings();
+              }
+            } catch (e) { console.error("브로드캐스트 리프레시 오류:", e); }
+          })();
         });
         broadcastCh.subscribe();
 
-        // 3) Polling safety net (every 15s)
+        // 3) Polling safety net (every 30s)
         setInterval(() => {
           loadInitial();
-        }, 15000);
+        }, 30000);
       }
 
       // 12) Init
