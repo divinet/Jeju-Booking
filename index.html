@@ -10,8 +10,8 @@
       input[type="text"] { padding: 8px 10px; font-size: 14px; }
       button { padding: 8px 12px; font-size: 14px; cursor: pointer; }
       .calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0; position: relative; border-radius: 0; }
-      .day { border: none; padding: 8px; min-height: 54px; width: 54px; aspect-ratio: 1; background: #fff; display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center; margin: 0 auto; }
-      .blank { min-height: 54px; width: 54px; aspect-ratio: 1; margin: 0 auto; }
+      .day { border: none; padding: 8px; min-height: 54px; background: #fff; display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center; }
+      .blank { min-height: 54px; }
       .day .dnum { font-weight: 700; font-size: 18px; }
       .day.selecting { background: #2563eb !important; }
       .day.selecting .dnum { color: #fff !important; }
@@ -224,8 +224,6 @@
           const e = document.createElement("div");
           e.className = "muted";
           e.style.textAlign = "center";
-          e.style.width = "54px";
-          e.style.margin = "0 auto";
           if (idx === 0) e.style.color = "#fa5252"; // 일요일 빨간색
           if (idx === 6) e.style.color = "#228be6"; // 토요일 파란색
           e.textContent = w;
