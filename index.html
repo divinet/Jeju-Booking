@@ -47,26 +47,30 @@
       .calendar { 
         display: grid; 
         grid-template-columns: repeat(7, 1fr); 
-        gap: 1px;
+        gap: 0;
         position: relative;
-        background: #e0e0e0;
+        border: 1px solid #e0e0e0;
         border-radius: 8px;
         overflow: hidden;
       }
       .day { 
         aspect-ratio: 1;
-        border: none;
+        border-right: 1px solid #e0e0e0;
+        border-bottom: 1px solid #e0e0e0;
         padding: 8px;
         background: #fff; 
         display: flex; 
         flex-direction: column; 
         position: relative;
       }
+      .day:nth-child(7n) { border-right: none; }
       .blank { 
         aspect-ratio: 1; 
-        border: none; 
+        border-right: 1px solid #e0e0e0;
+        border-bottom: 1px solid #e0e0e0;
         background: #fafafa; 
       }
+      .blank:nth-child(7n) { border-right: none; }
       .day .dnum { 
         font-weight: 600; 
         font-size: 18px; 
@@ -219,7 +223,7 @@
         inset: 0; 
         display: grid; 
         grid-template-columns: repeat(7, 1fr); 
-        gap: 1px;
+        gap: 0;
         pointer-events: none; 
       }
       /* Modal */
@@ -695,10 +699,35 @@
         }
 
         const who = bookingsByDay.get(dateStr);
-        // 이미 내 예약 → 취소 확인
+        // 이미 내 예약 → 연속된 전체 구간 찾아서 취소
         if (who && who === currentName) {
-          const ok = await confirmModal(`${dateStr} 예약을 취소하시겠습니까?`);
-          if (ok) cancelDates([dateStr]);
+          // 연속된 구간 찾기
+          let rangeStart = dateStr;
+          let rangeEnd = dateStr;
+          const currentDay = parseDate(dateStr);
+          
+          // 이전 날짜로 연속 구간 찾기
+          for (let d = addDays(currentDay, -1); d >= parseDate(`${calendarStartYear}-11-01`); d = addDays(d, -1)) {
+            const dStr = fmtDate(d);
+            if (bookingsByDay.get(dStr) === currentName) {
+              rangeStart = dStr;
+            } else break;
+          }
+          
+          // 이후 날짜로 연속 구간 찾기
+          const lastDate = new Date(calendarStartYear + 1, 10, 0);
+          for (let d = addDays(currentDay, 1); d <= lastDate; d = addDays(d, 1)) {
+            const dStr = fmtDate(d);
+            if (bookingsByDay.get(dStr) === currentName) {
+              rangeEnd = dStr;
+            } else break;
+          }
+          
+          const [a, b] = [parseDate(rangeStart), parseDate(rangeEnd)].sort((x,y)=>x-y);
+          const dates = rangeInclusive(a, b);
+          const nights = dates.length;
+          const ok = await confirmModal(`${rangeStart === rangeEnd ? rangeStart : rangeStart + ' ~ ' + rangeEnd} (${nights}일) 예약을 취소하시겠습니까?`);
+          if (ok) cancelDates(dates);
           return;
         }
 
