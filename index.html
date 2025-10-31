@@ -549,6 +549,9 @@
         if (error) {
           console.error(error);
           await infoModal("예약 중 오류가 발생했습니다.");
+        } else {
+          // broadcast refresh to all clients
+          try { client.channel("booking-sync").send({ type: "broadcast", event: "refresh", payload: { ts: Date.now() } }); } catch {}
         }
       }
 
@@ -565,6 +568,9 @@
         if (error) {
           console.error(error);
           await infoModal("취소 중 오류가 발생했습니다.");
+        } else {
+          // broadcast refresh to all clients
+          try { client.channel("booking-sync").send({ type: "broadcast", event: "refresh", payload: { ts: Date.now() } }); } catch {}
         }
       }
 
@@ -676,6 +682,7 @@
 
       function subscribeRealtime() {
         if (isDemoMode) return; // no realtime in demo/local mode
+        // 1) Postgres changes (if replication is available)
         client
           .channel("booking-days-ch")
           .on(
@@ -693,6 +700,19 @@
             }
           )
           .subscribe();
+
+        // 2) Broadcast fallback (works without replication)
+        const broadcastCh = client.channel("booking-sync");
+        broadcastCh.on("broadcast", { event: "refresh" }, () => {
+          // Re-fetch to sync state across clients
+          loadInitial();
+        });
+        broadcastCh.subscribe();
+
+        // 3) Polling safety net (every 15s)
+        setInterval(() => {
+          loadInitial();
+        }, 15000);
       }
 
       // 12) Init
