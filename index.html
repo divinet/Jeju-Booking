@@ -10,17 +10,12 @@
       input[type="text"] { padding: 8px 10px; font-size: 14px; }
       button { padding: 8px 12px; font-size: 14px; cursor: pointer; }
       .calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0; position: relative; border-radius: 0; }
-      .day { border: none; border-top: 1px solid #ddd; border-left: 1px solid #ddd; padding: 10px; min-height: 54px; background: #fff; display: flex; flex-direction: column; gap: 6px; }
-      .day:nth-child(7n) { border-right: 1px solid #ddd; }
-      .day:nth-last-child(-n+7) { border-bottom: 1px solid #ddd; }
-      .blank { min-height: 54px; border-top: 1px solid #ddd; border-left: 1px solid #ddd; }
-      .blank:nth-child(7n) { border-right: 1px solid #ddd; }
-      .blank:nth-last-child(-n+7) { border-bottom: 1px solid #ddd; }
-      .day .dnum { font-weight: 600; font-size: 16px; color: #666; }
-      .day.selecting { background: #f5f5f5 !important; }
-      .day.select-start { background: #f5f5f5 !important; }
-      .day.select-end { background: #f5f5f5 !important; }
-      .day.mine { background: #e6f4ff; border-color: #b3ddff; }
+      .day { border: none; padding: 8px; min-height: 54px; background: #fff; display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center; }
+      .blank { min-height: 54px; }
+      .day .dnum { font-weight: 700; font-size: 18px; }
+      .day.selecting { background: #2563eb !important; border-radius: 8px; }
+      .day.selecting .dnum { color: #fff !important; }
+      .day.mine { background: #e6f4ff; }
       .day.other { background: #f8f9fa; }
       .legend { display: flex; gap: 12px; margin: 8px 0 16px; color: #555; font-size: 13px; }
       .legend span { display: inline-flex; align-items: center; gap: 6px; }
@@ -29,15 +24,17 @@
       .swatch.other { background: #f8f9fa; }
       .months { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
       .month { border: 1px solid #eee; border-radius: 8px; padding: 12px; }
-      .month h3 { margin: 0 0 8px; font-size: 16px; }
+      .month-header { display: flex; align-items: baseline; justify-content: center; gap: 8px; margin-bottom: 16px; }
+      .month h3 { margin: 0; font-size: 32px; font-weight: 700; color: #1e40af; }
+      .month .year { font-size: 20px; font-weight: 400; color: #333; }
       .summary { margin-top: 24px; }
       table { border-collapse: collapse; width: 100%; max-width: 520px; }
       th, td { border: 1px solid #eee; padding: 8px; text-align: left; }
       th { background: #fafafa; }
       .muted { color: #888; font-size: 13px; }
-      .day.sun { border-top-color: #ff9999; border-left-color: #ff9999; }
-      .day.sat { border-top-color: #66b3ff; border-left-color: #66b3ff; }
-      .day.holiday { border-top-color: #ff9999; border-left-color: #ff9999; }
+      .day.sun .dnum { color: #e53e3e; }
+      .day.sat .dnum { color: #3182ce; }
+      .day.holiday .dnum { color: #e53e3e; }
       .res-bar { border-radius: 6px; padding: 4px 8px; align-self: stretch; justify-self: stretch; display: flex; align-items: center; justify-content: center; color: #0b7285; font-weight: 600; z-index: 2; pointer-events: auto; cursor: pointer; }
       .res-bar.mine { background: rgba(173, 216, 230, 0.55); border: 1px solid #a5d8ff; }
       .res-bar.other { background: #f1f3f5; border: 1px solid #dee2e6; color: #495057; }
@@ -167,7 +164,7 @@
       const modalActions = document.getElementById("modalActions");
 
       const monthNames = ["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
-      const weekdayNames = ["일","월","화","수","목","금","토"];
+      const weekdayNames = ["日","月","火","水","木","金","土"];
       const calendarStartYear = 2025;
       const calendarStartMonthIdx = 10; // 0-indexed → 10 = 11월
       const monthsToShow = 24; // 스크롤로 쭉 내려볼 수 있도록 충분히 많이 표시
@@ -208,9 +205,16 @@
         const wrapper = document.createElement("div");
         wrapper.className = "month";
 
+        const headerDiv = document.createElement("div");
+        headerDiv.className = "month-header";
         const h = document.createElement("h3");
-        h.textContent = `${year}년 ${monthNames[monthIdx]}`;
-        wrapper.appendChild(h);
+        h.textContent = monthNames[monthIdx].replace("월", "");
+        headerDiv.appendChild(h);
+        const yearSpan = document.createElement("span");
+        yearSpan.className = "year";
+        yearSpan.textContent = year;
+        headerDiv.appendChild(yearSpan);
+        wrapper.appendChild(headerDiv);
 
         // Weekday header
         const header = document.createElement("div");
@@ -250,11 +254,6 @@
           label.textContent = d.getDate();
           dayEl.appendChild(label);
 
-          const nameEl = document.createElement("div");
-          nameEl.className = "who";
-          nameEl.style.fontSize = "13px";
-          nameEl.style.minHeight = "18px";
-          dayEl.appendChild(nameEl);
 
           const dateStr = fmtDate(d);
           dayEl.dataset.date = dateStr;
@@ -351,9 +350,6 @@
         document.querySelectorAll(".day").forEach(el => {
           const dateStr = el.dataset.date;
           const who = bookingsByDay.get(dateStr);
-          const whoEl = el.querySelector(".who");
-          // 개별 박스 내 텍스트는 지우고, 구간 바에 이름을 표시
-          whoEl.textContent = "";
           el.classList.remove("mine","other");
           if (who) {
             if (currentName && who === currentName) el.classList.add("mine");
@@ -440,28 +436,35 @@
       }
 
       function paintSelection() {
-        document.querySelectorAll(".day").forEach(el => el.classList.remove("selecting","select-start","select-end"));
+        document.querySelectorAll(".day").forEach(el => {
+          el.classList.remove("selecting","select-start","select-end");
+          el.style.borderRadius = "";
+        });
         // Only start chosen → highlight start day
         if (selectingStart && !selectingEnd) {
           const startEl = document.querySelector(`.day[data-date="${selectingStart}"]`);
-          if (startEl) startEl.classList.add("select-start");
+          if (startEl) {
+            startEl.classList.add("selecting");
+            startEl.style.borderRadius = "8px";
+          }
           bookBtn.disabled = true;
           return;
         }
-        // Range chosen → highlight full span and mark ends
+        // Range chosen → highlight full span
         if (selectingStart && selectingEnd) {
           const nights = nightCount(selectingStart, selectingEnd);
           bookBtn.disabled = nights < minNights;
           const [a, b] = [parseDate(selectingStart), parseDate(selectingEnd)].sort((x,y)=>x-y);
-          for (let d = new Date(a); d <= b; d = addDays(d, 1)) {
-            const ds = fmtDate(d);
+          const dates = rangeInclusive(a, b);
+          dates.forEach((ds, idx) => {
             const el = document.querySelector(`.day[data-date="${ds}"]`);
-            if (el) el.classList.add("selecting");
-          }
-          const startEl = document.querySelector(`.day[data-date="${fmtDate(a)}"]`);
-          const endEl = document.querySelector(`.day[data-date="${fmtDate(b)}"]`);
-          if (startEl) startEl.classList.add("select-start");
-          if (endEl) endEl.classList.add("select-end");
+            if (el) {
+              el.classList.add("selecting");
+              // 첫날은 왼쪽 라운딩, 마지막날은 오른쪽 라운딩
+              if (idx === 0) { el.style.borderTopLeftRadius = "8px"; el.style.borderBottomLeftRadius = "8px"; }
+              if (idx === dates.length - 1) { el.style.borderTopRightRadius = "8px"; el.style.borderBottomRightRadius = "8px"; }
+            }
+          });
         } else {
           bookBtn.disabled = true;
         }
