@@ -652,30 +652,34 @@
           paintBookings();
           return;
         }
-        // 1) Load members
-        const { data: mdata, error: merr } = await client
-          .from("members")
-          .select("id, name")
-          .order("name", { ascending: true });
-        if (merr) { console.error(merr); return; }
-        members = mdata || [];
-        memberIdByName = new Map(members.map(m => [m.name, m.id]));
-        memberNameById = new Map(members.map(m => [m.id, m.name]));
-        allowedMembers = members.map(m => m.name);
+        try {
+          // 1) Load members
+          const { data: mdata, error: merr } = await client
+            .from("members")
+            .select("id, name")
+            .order("name", { ascending: true });
+          if (merr) { console.error("멤버 로드 오류:", merr); return; }
+          members = mdata || [];
+          memberIdByName = new Map(members.map(m => [m.name, m.id]));
+          memberNameById = new Map(members.map(m => [m.id, m.name]));
+          allowedMembers = members.map(m => m.name);
 
-        // 2) Load bookings (range)
-        const start = fmtDate(new Date(calendarStartYear, calendarStartMonthIdx, 1));
-        const end = fmtDate(new Date(calendarStartYear, calendarStartMonthIdx + monthsToShow, 0));
-        const { data: bdata, error: berr } = await client
-          .from("booking_days")
-          .select("the_date, member_id")
-          .gte("the_date", start)
-          .lte("the_date", end);
-        if (berr) { console.error(berr); return; }
-        bookingsByDay.clear();
-        for (const row of (bdata || [])) {
-          const nm = memberNameById.get(row.member_id) || "";
-          if (nm) bookingsByDay.set(row.the_date, nm);
+          // 2) Load bookings (range)
+          const start = fmtDate(new Date(calendarStartYear, calendarStartMonthIdx, 1));
+          const end = fmtDate(new Date(calendarStartYear, calendarStartMonthIdx + monthsToShow, 0));
+          const { data: bdata, error: berr } = await client
+            .from("booking_days")
+            .select("the_date, member_id")
+            .gte("the_date", start)
+            .lte("the_date", end);
+          if (berr) { console.error("예약 로드 오류:", berr); return; }
+          bookingsByDay.clear();
+          for (const row of (bdata || [])) {
+            const nm = memberNameById.get(row.member_id) || "";
+            if (nm) bookingsByDay.set(row.the_date, nm);
+          }
+        } catch (e) {
+          console.error("데이터 로드 중 오류:", e);
         }
         paintBookings();
       }
