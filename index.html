@@ -9,13 +9,13 @@
       .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
       input[type="text"] { padding: 8px 10px; font-size: 14px; }
       button { padding: 8px 12px; font-size: 14px; cursor: pointer; }
-      .calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; position: relative; }
-      .day { border: 1px solid #ddd; padding: 10px; min-height: 54px; border-radius: 6px; background: #fff; display: flex; flex-direction: column; gap: 6px; }
+      .calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0; position: relative; }
+      .day { border: 1px solid #ddd; padding: 10px; min-height: 54px; background: #fff; display: flex; flex-direction: column; gap: 6px; }
       .blank { min-height: 54px; }
-      .day .dnum { font-weight: 600; font-size: 12px; color: #666; }
-      .day.selecting { background: #e7f5ff; border-color: #a5d8ff; }
-      .day.select-start { background: #d3f9d8; border-color: #8ce99a; }
-      .day.select-end { background: #fff3bf; border-color: #ffd43b; }
+      .day .dnum { font-weight: 600; font-size: 16px; color: #666; }
+      .day.selecting { background: #f5f5f5; border-color: #a5d8ff; }
+      .day.select-start { background: #f5f5f5; border-color: #8ce99a; }
+      .day.select-end { background: #f5f5f5; border-color: #ffd43b; }
       .day.mine { background: #e6f4ff; border-color: #b3ddff; }
       .day.other { background: #f8f9fa; }
       .legend { display: flex; gap: 12px; margin: 8px 0 16px; color: #555; font-size: 13px; }
@@ -38,7 +38,7 @@
       .res-bar.mine { background: rgba(173, 216, 230, 0.55); border: 1px solid #a5d8ff; }
       .res-bar.other { background: #f1f3f5; border: 1px solid #dee2e6; color: #495057; }
       /* Bars overlay */
-      .res-overlay { position: absolute; inset: 0; display: grid; grid-template-columns: inherit; gap: 6px; pointer-events: none; }
+      .res-overlay { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(7, 1fr); gap: 0; pointer-events: none; }
       /* Modal */
       .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: none; align-items: center; justify-content: center; z-index: 1000; }
       .modal { background: #fff; width: min(92vw, 420px); border-radius: 10px; box-shadow: 0 12px 28px rgba(0,0,0,0.2); overflow: hidden; }
@@ -46,7 +46,7 @@
       .modal-body { padding: 16px; color: #333; }
       .modal-actions { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 16px; border-top: 1px solid #eee; }
       .btn { padding: 8px 12px; border-radius: 6px; border: 1px solid #ddd; background: #fff; cursor: pointer; }
-      .btn-primary { background: #228be6; color: #fff; border-color: #228be6; }
+      .btn-primary { background: #228be6; color: #fff; border-color: #228be6; padding: 8px 20px; }
     </style>
     <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   </head>
@@ -211,10 +211,12 @@
         // Weekday header
         const header = document.createElement("div");
         header.className = "calendar";
-        weekdayNames.forEach(w => {
+        weekdayNames.forEach((w, idx) => {
           const e = document.createElement("div");
           e.className = "muted";
           e.style.textAlign = "center";
+          if (idx === 0) e.style.color = "#fa5252"; // 일요일 빨간색
+          if (idx === 6) e.style.color = "#228be6"; // 토요일 파란색
           e.textContent = w;
           header.appendChild(e);
         });
@@ -313,8 +315,8 @@
       function confirmModal(message, title = "확인") {
         return new Promise((resolve) => {
           openModal(title, message, [
-            { label: "아니오", variant: "", resolveValue: () => resolve(false) },
-            { label: "예", variant: "btn-primary", resolveValue: () => resolve(true) }
+            { label: "예", variant: "btn-primary", resolveValue: () => resolve(true) },
+            { label: "아니오", variant: "", resolveValue: () => resolve(false) }
           ]);
         });
       }
@@ -510,6 +512,7 @@
         if (!selectingStart || (selectingStart && selectingEnd)) {
           selectingStart = dateStr;
           selectingEnd = null;
+          paintSelection();
         } else {
           // set end
           const [a, b] = [parseDate(selectingStart), parseDate(dateStr)].sort((x,y)=>x-y);
@@ -518,10 +521,10 @@
           const nights = nightCount(selectingStart, selectingEnd);
           if (nights < minNights) {
             await infoModal(`최소 ${minNights}일 이상 연속으로 선택해야 합니다.`);
+            paintSelection();
             // keep end but disable booking until enough days
-          }
-          // 예약 확정 확인 및 충돌 검사
-          if (nights >= minNights) {
+          } else {
+            // 예약 확정 확인 및 충돌 검사
             const dates = rangeInclusive(a, b);
             const conflicts = dates.filter(d => {
               const w = bookingsByDay.get(d);
@@ -538,7 +541,12 @@
             let booker = currentName;
             if (!booker) {
               const picked = await selectMemberModal();
-              if (!picked) return; // 취소
+              if (!picked) {
+                selectingStart = null;
+                selectingEnd = null;
+                paintSelection();
+                return;
+              }
               setName(picked);
               booker = picked;
             }
@@ -548,11 +556,10 @@
               await bookDates(dates, booker);
               selectingStart = null;
               selectingEnd = null;
-              paintSelection();
             }
+            paintSelection();
           }
         }
-        paintSelection();
       }
 
       // 7) Booking/cancel operations
